@@ -1,0 +1,6 @@
+{
+  "name": "VREDEFORT INDONESIA",
+  "description": "Mining Knowledge, Files & Planning Workspace for Perencanaan Tambang 2026/2027",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
