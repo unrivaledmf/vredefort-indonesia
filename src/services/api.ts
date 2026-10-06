@@ -219,7 +219,45 @@ export const api = {
     return `/api/files/${id}/raw${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   },
 
-  getDownloadUrl: (id: string) => `/api/files/${id}/download`,
+  getDownloadUrl: (id: string) => {
+    const token = getStoredToken();
+    return `/api/files/${id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  // Unduh via fetch + Bearer token -> blob. Tidak bergantung pada <a href> (yang tidak
+  // mengirim header Authorization) sehingga tidak error "token tidak ditemukan".
+  downloadFile: async (id: string, fallbackName = 'berkas') => {
+    const token = getStoredToken();
+    const res = await fetch(`/api/files/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (res.status === 401) {
+      clearStoredToken();
+      window.dispatchEvent(new Event('auth_unauthorized'));
+      throw new Error('Sesi telah berakhir, silakan login kembali');
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({} as any));
+      throw new Error(data.error || `Gagal mengunduh berkas (${res.status})`);
+    }
+    let filename = fallbackName;
+    const cd = res.headers.get('content-disposition') || '';
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const plain = cd.match(/filename="?([^";]+)"?/i);
+    try {
+      if (star) filename = decodeURIComponent(star[1]);
+      else if (plain) filename = plain[1];
+    } catch {}
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  },
 
   // Folders
   getFolders: () => request<Folder[]>('/folders'),

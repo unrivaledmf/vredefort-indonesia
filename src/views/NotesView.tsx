@@ -129,6 +129,54 @@ export const NotesView: React.FC<NotesViewProps> = ({
 
   const selectedNote = notes.find(n => n.id === selectedNoteId);
 
+  // Snapshot nilai TERBARU semua field. Timer autosave & loadData berjalan async, jadi tanpa ref ini
+  // mereka membaca nilai lama (stale closure): tag/folder/pin tidak tersimpan, dan data note lain tertimpa.
+  const latestRef = useRef({
+    selectedNoteId: selectedNoteId as string | null,
+    title: '',
+    content: '',
+    noteFolderId: '',
+    tagsInput: '',
+    selectedAcaraId: '',
+    linkedFiles: [] as string[],
+    isPinned: false,
+    isFavorite: false,
+    isGuest
+  });
+  latestRef.current = {
+    selectedNoteId,
+    title,
+    content,
+    noteFolderId,
+    tagsInput,
+    selectedAcaraId,
+    linkedFiles,
+    isPinned,
+    isFavorite,
+    isGuest
+  };
+  const pendingSaveRef = useRef<{ noteId: string; title: string; content: string; folderOverride?: string } | null>(null);
+
+  const buildPayload = (noteTitle: string, noteContent: string, folderOverride?: string) => {
+    const L = latestRef.current;
+    const tagsArr = L.tagsInput
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean)
+      .map(t => (t.startsWith('#') ? t : `#${t}`));
+    const folderToSave = folderOverride !== undefined ? folderOverride : L.noteFolderId;
+    return {
+      title: noteTitle,
+      content: noteContent,
+      folderId: folderToSave || undefined,
+      tags: tagsArr,
+      acaraId: L.selectedAcaraId || undefined,
+      linkedFileIds: L.linkedFiles,
+      isPinned: L.isPinned,
+      isFavorite: L.isFavorite
+    };
+  };
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -148,7 +196,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
         setSiteSettings(settings);
       }
 
-      const targetId = initialNoteId || selectedNoteId || (nList.length > 0 ? nList[0].id : null);
+      const targetId = initialNoteId || latestRef.current.selectedNoteId || (nList.length > 0 ? nList[0].id : null);
       if (targetId) {
         const found = nList.find(n => n.id === targetId) || nList[0];
         if (found) {
@@ -181,67 +229,74 @@ export const NotesView: React.FC<NotesViewProps> = ({
   };
 
   const handleSelectNote = (note: Note) => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    pendingSaveRef.current = null;
     if (saveState === 'dirty' && selectedNoteId && !isGuest) {
       handleSave(false);
     }
     populateNoteFields(note);
   };
 
-  // Debounced Autosave
+  // Debounced Autosave (aman dari stale closure)
+  const runPendingSave = async () => {
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (!pending) return;
+    // Jika user sudah pindah ke note lain, handleSelectNote sudah menyimpan; jangan timpa.
+    if (latestRef.current.selectedNoteId !== pending.noteId) return;
+    setSaveState('saving');
+    try {
+      const payload = buildPayload(pending.title, pending.content, pending.folderOverride);
+      await api.updateNote(pending.noteId, payload);
+      setNotes(prev =>
+        prev.map(n => (n.id === pending.noteId ? { ...n, ...payload, updatedAt: new Date().toISOString() } : n))
+      );
+      setSaveState(pendingSaveRef.current ? 'dirty' : 'saved');
+    } catch (err) {
+      console.error('Autosave error:', err);
+      setSaveState('dirty');
+    }
+  };
+
   const triggerAutosave = (newTitle: string, newContent: string, newFolderId?: string) => {
-    if (isGuest) return;
+    if (isGuest || !selectedNoteId) return;
     setSaveState('dirty');
+    pendingSaveRef.current = {
+      noteId: selectedNoteId,
+      title: newTitle,
+      content: newContent,
+      folderOverride: newFolderId
+    };
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
     }
-    autosaveTimerRef.current = setTimeout(async () => {
-      if (!selectedNoteId) return;
-      setSaveState('saving');
-      try {
-        const tagsArr = tagsInput
-          .split(',')
-          .map(t => t.trim())
-          .filter(Boolean)
-          .map(t => (t.startsWith('#') ? t : `#${t}`));
-
-        const folderToSave = newFolderId !== undefined ? newFolderId : noteFolderId;
-
-        await api.updateNote(selectedNoteId, {
-          title: newTitle,
-          content: newContent,
-          folderId: folderToSave || undefined,
-          tags: tagsArr,
-          acaraId: selectedAcaraId || undefined,
-          linkedFileIds: linkedFiles,
-          isPinned,
-          isFavorite
-        });
-
-        setNotes(prev =>
-          prev.map(n =>
-            n.id === selectedNoteId
-              ? {
-                  ...n,
-                  title: newTitle,
-                  content: newContent,
-                  folderId: folderToSave || undefined,
-                  tags: tagsArr,
-                  acaraId: selectedAcaraId || undefined,
-                  linkedFileIds: linkedFiles,
-                  isPinned,
-                  isFavorite,
-                  updatedAt: new Date().toISOString()
-                }
-              : n
-          )
-        );
-        setSaveState('saved');
-      } catch (err) {
-        console.error('Autosave error:', err);
-        setSaveState('dirty');
-      }
-    }, 800);
+    autosaveTimerRef.current = setTimeout(runPendingSave, 800);
   };
+
+  // Simpan perubahan yang belum terkirim saat user pindah menu / menutup tab
+  useEffect(() => {
+    const flush = () => {
+      const pending = pendingSaveRef.current;
+      if (!pending || latestRef.current.isGuest) return;
+      pendingSaveRef.current = null;
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      const token = localStorage.getItem('vredefort_token');
+      fetch(`/api/notes/${pending.noteId}`, {
+        method: 'PUT',
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(buildPayload(pending.title, pending.content, pending.folderOverride))
+      }).catch(() => {});
+    };
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      flush();
+    };
+  }, []);
 
   const handleSave = async (showToast = true) => {
     if (isGuest || !selectedNoteId) return;

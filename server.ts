@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import compression from 'compression';
 import { createServer as createViteServer } from 'vite';

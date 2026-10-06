@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 export interface ModalProps {
@@ -26,6 +26,17 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  const uid = useId();
+  const titleId = `${uid}-title`;
+  const descId = `${uid}-desc`;
+
+  // Simpan onClose/closeOnEscape terbaru di ref. Parent biasanya mengirim fungsi inline
+  // (() => setX(false)) yang berubah di SETIAP render; kalau dimasukkan ke dependency effect,
+  // effect akan jalan ulang tiap ketikan dan fokus "loncat" ke input pertama.
+  const onCloseRef = useRef(onClose);
+  const closeOnEscapeRef = useRef(closeOnEscape);
+  onCloseRef.current = onClose;
+  closeOnEscapeRef.current = closeOnEscape;
 
   // Handle ESC key & Focus Trap
   useEffect(() => {
@@ -34,9 +45,9 @@ export const Modal: React.FC<ModalProps> = ({
     previousActiveElement.current = document.activeElement as HTMLElement;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && closeOnEscape) {
+      if (e.key === 'Escape' && closeOnEscapeRef.current) {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -66,9 +77,9 @@ export const Modal: React.FC<ModalProps> = ({
     document.addEventListener('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
-    // Focus the modal after mounting
+    // Fokus awal hanya saat modal baru dibuka, dan hanya jika fokus belum ada di dalam modal
     const timer = setTimeout(() => {
-      if (modalRef.current) {
+      if (modalRef.current && !modalRef.current.contains(document.activeElement)) {
         const firstInput = modalRef.current.querySelector<HTMLElement>('input, button:not([aria-label="Tutup"])');
         if (firstInput) {
           firstInput.focus();
@@ -86,7 +97,7 @@ export const Modal: React.FC<ModalProps> = ({
         previousActiveElement.current.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -102,8 +113,8 @@ export const Modal: React.FC<ModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={title ? 'modal-title' : undefined}
-      aria-describedby={description ? 'modal-description' : undefined}
+      aria-labelledby={title ? titleId : undefined}
+      aria-describedby={description ? descId : undefined}
     >
       {/* Backdrop */}
       <div
@@ -123,14 +134,14 @@ export const Modal: React.FC<ModalProps> = ({
             <div>
               {title && (
                 <h3
-                  id="modal-title"
+                  id={titleId}
                   className="text-base font-semibold text-neutral-900 dark:text-neutral-100 tracking-tight"
                 >
                   {title}
                 </h3>
               )}
               {description && (
-                <p id="modal-description" className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p id={descId} className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                   {description}
                 </p>
               )}

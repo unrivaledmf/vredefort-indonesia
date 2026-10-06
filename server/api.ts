@@ -808,6 +808,11 @@ router.get('/files/:id/raw', (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Token autentikasi diperlukan.' });
   }
 
+  // PENTING: token harus diverifikasi (tanda tangan, kedaluwarsa, tokenVersion), bukan sekadar ada.
+  if (!verifyToken(token)) {
+    return res.status(401).json({ error: 'Sesi telah berakhir atau tidak valid, silakan login kembali.' });
+  }
+
   const db = getDatabase();
   const file = db.files.find(f => f.id === req.params.id);
   if (!file) {
@@ -920,6 +925,13 @@ router.get('/files/:id/download', authMiddleware, (req: AuthRequest, res: Respon
   const filePath = path.resolve(getUploadsDir(), file.storedName);
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File tidak ditemukan di penyimpanan.' });
+  }
+
+  if (req.user?.role === 'guest') {
+    const limit = checkGuestDownloadLimit(req.ip || req.socket.remoteAddress || 'unknown');
+    if (!limit.allowed) {
+      return res.status(429).json({ error: 'Batas unduhan tamu per jam tercapai. Coba lagi nanti.' });
+    }
   }
 
   // RFC 5987 compliant Content-Disposition

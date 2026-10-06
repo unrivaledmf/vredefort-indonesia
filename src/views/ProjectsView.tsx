@@ -80,20 +80,22 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
       setNotes(n);
       setTasks(t);
       setChecklists(c);
-      if (initialProjectId) {
-        setSelectedProjectId(initialProjectId);
-      }
+      setSelectedProjectId(prev => (p.some(x => x.id === prev) ? prev : p[0]?.id ?? prev));
     } catch (err: any) {
       console.error('Projects load error:', err);
       setError(err.message || 'Gagal memuat data Acara Perencanaan Tambang.');
     } finally {
       setLoading(false);
     }
-  }, [initialProjectId]);
+  }, []);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (initialProjectId) setSelectedProjectId(initialProjectId);
+  }, [initialProjectId]);
 
   const currentProject = projects.find(p => p.id === selectedProjectId) || projects[0];
 

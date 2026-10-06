@@ -65,7 +65,13 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   const [files, setFiles] = useState<MiningFile[]>([]);
   const [folders, setFolders] = useState<FolderType[]>([]);
   const [storage, setStorage] = useState<StorageStats | null>(null);
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(() => {
+    try {
+      return sessionStorage.getItem('vredefort_fm_folder') || undefined;
+    } catch {
+      return undefined;
+    }
+  });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     try {
       return (localStorage.getItem('vredefort_file_view_mode') as 'grid' | 'list') || 'grid';
@@ -73,7 +79,22 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       return 'grid';
     }
   });
-  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'trash'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'trash'>(() => {
+    try {
+      const t = sessionStorage.getItem('vredefort_fm_tab');
+      return t === 'favorites' || t === 'trash' ? t : 'all';
+    } catch {
+      return 'all';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (currentFolderId) sessionStorage.setItem('vredefort_fm_folder', currentFolderId);
+      else sessionStorage.removeItem('vredefort_fm_folder');
+      sessionStorage.setItem('vredefort_fm_tab', activeTab);
+    } catch {}
+  }, [currentFolderId, activeTab]);
 
   const handleSetViewMode = (mode: 'grid' | 'list') => {
     setViewMode(mode);
@@ -157,11 +178,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       setFolders(flds);
       setStorage(st);
 
-      // Auto-preview if initialFileId passed
-      if (initialFileId) {
-        const found = f.find(item => item.id === initialFileId);
-        if (found) onPreviewFile(found);
-      }
+      // Folder tersimpan bisa saja sudah dihapus -> kembali ke root
+      setCurrentFolderId(prev => (prev && !flds.some(x => x.id === prev) ? undefined : prev));
     } catch (err: any) {
       console.error('Error loading files:', err);
       setError(err.message || 'Gagal memuat berkas.');
@@ -178,6 +196,21 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     loadData();
     setSelectedFileIds(new Set());
   }, [activeTab, isGuest]);
+
+  // Auto-preview berkas dari hash (#/files/<id>) - juga saat hash berubah ketika view sudah terbuka
+  const previewedFromHashRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!initialFileId) {
+      previewedFromHashRef.current = undefined;
+      return;
+    }
+    if (previewedFromHashRef.current === initialFileId || files.length === 0) return;
+    const found = files.find(item => item.id === initialFileId);
+    if (found) {
+      previewedFromHashRef.current = initialFileId;
+      onPreviewFile(found);
+    }
+  }, [initialFileId, files]);
 
   // Upload handler with real progress
   const uploadFilesWithTracking = async (fileList: FileList) => {
@@ -920,16 +953,14 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1">
-                      <a
-                        href={api.getDownloadUrl(file.id)}
-                        download={file.name}
-                        onClick={e => e.stopPropagation()}
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); api.downloadFile(file.id, file.name).catch((err: any) => toast.error('Gagal Mengunduh', err.message)); }}
                         title="Unduh berkas"
                         aria-label="Unduh berkas"
                         className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
                       >
                         <Download className="w-3.5 h-3.5" />
-                      </a>
+                      </button>
                       {activeTab !== 'trash' && (
                         <button
                           type="button"
@@ -1158,15 +1189,13 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <a
-                            href={api.getDownloadUrl(file.id)}
-                            download={file.name}
+                          <button type="button" onClick={e => { api.downloadFile(file.id, file.name).catch((err: any) => toast.error('Gagal Mengunduh', err.message)); }}
                             title="Unduh berkas"
                             aria-label="Unduh berkas"
                             className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/[0.06] cursor-pointer"
                           >
                             <Download className="w-4 h-4" />
-                          </a>
+                          </button>
                           {activeTab === 'trash' ? (
                             !isGuest && (
                               <button

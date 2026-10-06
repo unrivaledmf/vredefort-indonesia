@@ -4,6 +4,9 @@ import { getDatabase } from './db.ts';
 
 // Get or validate SESSION_SECRET
 let JWT_SECRET = process.env.SESSION_SECRET || 'vredefort-indonesia-secure-session-secret-key-2026';
+if (!process.env.SESSION_SECRET) {
+  console.warn('[SECURITY] SESSION_SECRET belum diset di .env - memakai kunci default yang terlihat di source code. Segera set SESSION_SECRET.');
+}
 
 // In-Memory Login Rate Limiter (Max 5 failed attempts per 15 minutes per IP + username)
 interface RateLimitRecord {

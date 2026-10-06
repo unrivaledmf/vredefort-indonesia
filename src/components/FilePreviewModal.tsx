@@ -385,14 +385,12 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
               {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
 
-            <a
-              href={api.getDownloadUrl(file.id)}
-              download={file.name}
+            <button type="button" onClick={e => { api.downloadFile(file.id, file.name).catch((err: any) => toast.error('Gagal Mengunduh', err.message)); }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors shadow-xs"
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Unduh Berkas</span>
-            </a>
+            </button>
 
             <button
               type="button"
@@ -708,14 +706,12 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                   </div>
                 </div>
 
-                <a
-                  href={api.getDownloadUrl(file.id)}
-                  download={file.name}
+                <button type="button" onClick={e => { api.downloadFile(file.id, file.name).catch((err: any) => toast.error('Gagal Mengunduh', err.message)); }}
                   className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-md"
                 >
                   <Download className="w-4 h-4" />
                   Unduh Berkas ({file.extension.toUpperCase().replace('.', '')})
-                </a>
+                </button>
               </div>
             )}
           </div>
